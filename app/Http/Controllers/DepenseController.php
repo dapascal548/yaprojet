@@ -14,6 +14,10 @@ class DepenseController extends Controller
 
     public function store(Request $request, Projet $projet)
     {
+        if (auth()->user()->isCollaborator()) {
+            abort(403, "Action non autorisée. Les collaborateurs ont un accès en consultation uniquement.");
+        }
+
         $validated = $request->validate([
             'categorie_id' => 'required|exists:categories_depense,id',
             'montant' => 'required|numeric|min:0',
@@ -48,6 +52,10 @@ class DepenseController extends Controller
 
     public function update(Request $request, Projet $projet, Depense $depense)
     {
+        if (auth()->user()->isCollaborator()) {
+            abort(403, "Action non autorisée. Les collaborateurs ont un accès en consultation uniquement.");
+        }
+
         if ($depense->statut_validation === 'validee' && !auth()->user()->isAdmin()) {
             return redirect()->back()->withErrors(['error' => 'Impossible de modifier une dépense déjà validée.']);
         }
@@ -77,6 +85,10 @@ class DepenseController extends Controller
 
     public function destroy(Projet $projet, Depense $depense)
     {
+        if (auth()->user()->isCollaborator()) {
+            abort(403, "Action non autorisée. Les collaborateurs ont un accès en consultation uniquement.");
+        }
+
         if ($depense->statut_validation === 'validee' && !auth()->user()->isAdmin()) {
             return redirect()->back()->withErrors(['error' => 'Impossible de supprimer une dépense déjà validée.']);
         }

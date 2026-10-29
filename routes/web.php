@@ -21,18 +21,41 @@ Route::middleware(['auth', 'verified'])->group(function () {
 
     Route::get('/dashboard', function () {
         $projetsActifs = Projet::where('statut', 'en_cours')->count();
+        $projetsPause = Projet::where('statut', 'en_pause')->count();
         $projetsTermines = Projet::where('statut', 'termine')->count();
         $totalDepensesValidees = Depense::where('statut_validation', 'validee')->get()->sum('montant');
         $totalDepensesEnAttente = Depense::where('statut_validation', 'en_attente')->get()->sum('montant');
 
         $projetsRecents = Projet::with(['devis', 'depenses'])->latest()->take(5)->get();
 
+        // Données pour le graphique comparatif des projets (Bar Chart)
+        $tousLesProjets = Projet::with(['devis', 'depenses'])->latest()->take(8)->get();
+        $chartProjetsNoms = $tousLesProjets->pluck('nom');
+        $chartDevisData = $tousLesProjets->map(fn($p) => $p->total_revenus);
+        $chartDepensesData = $tousLesProjets->map(fn($p) => $p->total_depenses);
+        $chartResultatsData = $tousLesProjets->map(fn($p) => $p->resultat);
+
+        // Données pour la répartition par catégorie (Doughnut Chart)
+        $categoriesStats = \App\Models\CategorieDepense::with(['depenses' => function($q) {
+            $q->where('statut_validation', 'validee');
+        }])->get();
+
+        $chartCategorieLabels = $categoriesStats->pluck('nom');
+        $chartCategorieValues = $categoriesStats->map(fn($c) => $c->depenses->sum('montant'));
+
         return view('dashboard', compact(
             'projetsActifs',
+            'projetsPause',
             'projetsTermines',
             'totalDepensesValidees',
             'totalDepensesEnAttente',
-            'projetsRecents'
+            'projetsRecents',
+            'chartProjetsNoms',
+            'chartDevisData',
+            'chartDepensesData',
+            'chartResultatsData',
+            'chartCategorieLabels',
+            'chartCategorieValues'
         ));
     })->name('dashboard');
 
@@ -51,6 +74,8 @@ Route::middleware(['auth', 'verified'])->group(function () {
 
     Route::get('/statistiques', [StatistiqueController::class, 'index'])->name('statistiques.index');
     Route::get('/reports', [ReportController::class, 'index'])->name('reports.index');
+    Route::get('/reports/pdf', [ReportController::class, 'exportPdf'])->name('reports.pdf');
+    Route::get('/reports/excel', [ReportController::class, 'exportExcel'])->name('reports.excel');
 
     Route::get('/settings', [SettingController::class, 'index'])->name('settings.index');
     Route::post('/settings/backup', [SettingController::class, 'createBackup'])->name('settings.backup');

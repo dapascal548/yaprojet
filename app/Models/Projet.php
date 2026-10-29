@@ -13,6 +13,8 @@ class Projet extends Model
         'user_id',
         'nom',
         'client',
+        'client_email',
+        'client_telephone',
         'description',
         'date_debut',
         'date_fin_prevue',

@@ -5,6 +5,9 @@ namespace App\Http\Controllers;
 use App\Models\Projet;
 use App\Models\ActionLog;
 use App\Models\CategorieDepense;
+use App\Mail\DevisClientMail;
+use App\Mail\ClotureProjetMail;
+use Illuminate\Support\Facades\Mail;
 use Illuminate\Http\Request;
 use Illuminate\Foundation\Auth\Access\AuthorizesRequests;
 
@@ -29,25 +32,43 @@ class ProjetController extends Controller
         }
 
         if ($request->filled('annee')) {
-            $query->whereYear('date_debut', $request->annee);
+            $annee = $request->annee;
+            $query->where(function ($q) use ($annee) {
+                $q->where('date_debut', 'like', "{$annee}-%")
+                  ->orWhereRaw('CAST(date_debut AS VARCHAR) LIKE ?', ["{$annee}-%"]);
+            });
         }
 
         $projets = $query->latest()->paginate(10);
-        $annees = Projet::selectRaw('YEAR(date_debut) as annee')->distinct()->pluck('annee')->filter()->values();
+        $annees = Projet::whereNotNull('date_debut')
+            ->pluck('date_debut')
+            ->map(fn($date) => \Illuminate\Support\Carbon::parse($date)->year)
+            ->unique()
+            ->sort()
+            ->values();
 
         return view('projets.index', compact('projets', 'annees'));
     }
 
     public function create()
     {
+        if (auth()->user()->isCollaborator()) {
+            abort(403, "Action non autorisée. Les collaborateurs ont un accès en consultation uniquement.");
+        }
         return view('projets.create');
     }
 
     public function store(Request $request)
     {
+        if (auth()->user()->isCollaborator()) {
+            abort(403, "Action non autorisée. Les collaborateurs ont un accès en consultation uniquement.");
+        }
+
         $validated = $request->validate([
             'nom' => 'required|string|max:150',
             'client' => 'required|string|max:150',
+            'client_email' => 'nullable|email|max:150',
+            'client_telephone' => 'nullable|string|max:50',
             'description' => 'nullable|string',
             'date_debut' => 'required|date',
             'date_fin_prevue' => 'required|date|after_or_equal:date_debut',
@@ -55,9 +76,10 @@ class ProjetController extends Controller
             'materiel' => 'required|numeric|min:0',
             'transport' => 'required|numeric|min:0',
             'autres_couts' => 'required|numeric|min:0',
+            'send_devis_now' => 'nullable|boolean',
         ]);
 
-        $projet = Projet::create([
+        $data = [
             'user_id' => auth()->id(),
             'nom' => $validated['nom'],
             'client' => $validated['client'],
@@ -65,7 +87,14 @@ class ProjetController extends Controller
             'date_debut' => $validated['date_debut'],
             'date_fin_prevue' => $validated['date_fin_prevue'],
             'statut' => 'en_cours',
-        ]);
+        ];
+
+        if (\Illuminate\Support\Facades\Schema::hasColumn('projets', 'client_email')) {
+            $data['client_email'] = $validated['client_email'] ?? null;
+            $data['client_telephone'] = $validated['client_telephone'] ?? null;
+        }
+
+        $projet = Projet::create($data);
 
         $projet->devis()->create([
             'main_oeuvre' => $validated['main_oeuvre'],
@@ -93,6 +122,10 @@ class ProjetController extends Controller
 
     public function edit(Projet $projet)
     {
+        if (auth()->user()->isCollaborator()) {
+            abort(403, "Action non autorisée. Les collaborateurs ont un accès en consultation uniquement.");
+        }
+
         if ($projet->depenses()->where('statut_validation', 'validee')->exists()) {
             return redirect()->route('projets.show', $projet)->withErrors(['error' => 'Impossible de modifier ce projet car des dépenses ont déjà été validées.']);
         }
@@ -103,6 +136,10 @@ class ProjetController extends Controller
 
     public function update(Request $request, Projet $projet)
     {
+        if (auth()->user()->isCollaborator()) {
+            abort(403, "Action non autorisée. Les collaborateurs ont un accès en consultation uniquement.");
+        }
+
         if ($projet->depenses()->where('statut_validation', 'validee')->exists()) {
             return redirect()->route('projets.show', $projet)->withErrors(['error' => 'Impossible de modifier ce projet car des dépenses ont déjà été validées.']);
         }
@@ -110,6 +147,8 @@ class ProjetController extends Controller
         $validated = $request->validate([
             'nom' => 'required|string|max:150',
             'client' => 'required|string|max:150',
+            'client_email' => 'nullable|email|max:150',
+            'client_telephone' => 'nullable|string|max:50',
             'description' => 'nullable|string',
             'date_debut' => 'required|date',
             'date_fin_prevue' => 'required|date|after_or_equal:date_debut',
@@ -121,7 +160,7 @@ class ProjetController extends Controller
             'autres_couts' => 'required|numeric|min:0',
         ]);
 
-        $projet->update([
+        $updateData = [
             'nom' => $validated['nom'],
             'client' => $validated['client'],
             'description' => $validated['description'],
@@ -129,7 +168,14 @@ class ProjetController extends Controller
             'date_fin_prevue' => $validated['date_fin_prevue'],
             'date_fin_reelle' => $validated['date_fin_reelle'] ?? $projet->date_fin_reelle,
             'statut' => $validated['statut'],
-        ]);
+        ];
+
+        if (\Illuminate\Support\Facades\Schema::hasColumn('projets', 'client_email')) {
+            $updateData['client_email'] = $validated['client_email'] ?? null;
+            $updateData['client_telephone'] = $validated['client_telephone'] ?? null;
+        }
+
+        $projet->update($updateData);
 
         if ($projet->devis) {
             $projet->devis->update([
@@ -151,6 +197,10 @@ class ProjetController extends Controller
 
     public function destroy(Projet $projet)
     {
+        if (auth()->user()->isCollaborator()) {
+            abort(403, "Action non autorisée. Les collaborateurs ont un accès en consultation uniquement.");
+        }
+
         if ($projet->depenses()->where('statut_validation', 'validee')->exists()) {
             return redirect()->route('projets.show', $projet)->withErrors(['error' => 'Impossible de supprimer ce projet car des dépenses ont déjà été validées.']);
         }
@@ -169,6 +219,10 @@ class ProjetController extends Controller
 
     public function close(Request $request, Projet $projet)
     {
+        if (auth()->user()->isCollaborator()) {
+            abort(403, "Action non autorisée. Les collaborateurs ont un accès en consultation uniquement.");
+        }
+
         $validated = $request->validate([
             'date_fin_reelle' => 'required|date|after_or_equal:date_debut',
         ]);

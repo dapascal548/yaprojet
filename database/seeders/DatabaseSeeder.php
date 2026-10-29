@@ -9,30 +9,30 @@ class DatabaseSeeder extends Seeder
 {
     public function run(): void
     {
-        User::firstOrCreate(
+        User::updateOrCreate(
             ['email' => 'admin@gespro.com'],
             [
-                'name' => 'Administrateur GESPRO',
-                'password' => bcrypt('password'),
-                'role' => 'administrateur',
+                'name'     => 'Administrateur GESPRO',
+                'password' => bcrypt('matricule'),
+                'role'     => 'administrateur',
             ]
         );
 
-        User::firstOrCreate(
+        User::updateOrCreate(
             ['email' => 'chef@gespro.com'],
             [
-                'name' => 'Chef de Projet',
-                'password' => bcrypt('password'),
-                'role' => 'chef_de_projet',
+                'name'     => 'Chef de Projet',
+                'password' => bcrypt('majuscule'),
+                'role'     => 'chef_de_projet',
             ]
         );
 
-        User::firstOrCreate(
+        User::updateOrCreate(
             ['email' => 'colla@gespro.com'],
             [
-                'name' => 'Collaborateur',
-                'password' => bcrypt('password'),
-                'role' => 'collaborateur',
+                'name'     => 'Collaborateur',
+                'password' => bcrypt('miniscule'),
+                'role'     => 'collaborateur',
             ]
         );
 
